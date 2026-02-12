@@ -1,6 +1,8 @@
 # server.py
 
 from flask import Flask, request, send_file, jsonify, Response
+from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 from gevent.pywsgi import WSGIServer
 from dotenv import load_dotenv
 import os
@@ -14,6 +16,23 @@ from tts_handler import generate_speech, generate_speech_stream, get_models_form
 from utils import getenv_bool, require_api_key, AUDIO_FORMAT_MIME_TYPES, DETAILED_ERROR_LOGGING
 
 app = Flask(__name__)
+
+# Enable CORS for all routes (handles OPTIONS preflight requests)
+CORS(app)
+
+# Trust reverse proxy headers (Caddy) for real client IP forwarding
+# x_for=1: trust 1 proxy setting X-Forwarded-For
+# x_proto=1: trust 1 proxy setting X-Forwarded-Proto
+# x_host=1: trust 1 proxy setting X-Forwarded-Host
+# x_prefix=1: trust 1 proxy setting X-Forwarded-Prefix
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+    x_prefix=1
+)
+
 load_dotenv()
 
 API_KEY = os.getenv('API_KEY', DEFAULT_CONFIGS["API_KEY"])
@@ -68,7 +87,7 @@ def generate_sse_audio_stream(text, voice, speed):
 
 # OpenAI endpoint format
 @app.route('/v1/audio/speech', methods=['POST'])
-@app.route('/audio/speech', methods=['POST'])  # Add this line for the alias
+@app.route('/audio/speech', methods=['POST'])  # Alias without /v1 prefix
 @require_api_key
 def text_to_speech():
     try:
@@ -143,17 +162,20 @@ def text_to_speech():
 @app.route('/models', methods=['GET', 'POST'])
 @app.route('/v1/audio/models', methods=['GET', 'POST'])
 @app.route('/audio/models', methods=['GET', 'POST'])
+
 def list_models():
     return jsonify({"models": get_models_formatted()})
 
 # OpenAI endpoint format
 @app.route('/v1/audio/voices', methods=['GET', 'POST'])
 @app.route('/audio/voices', methods=['GET', 'POST'])
+
 def list_voices_formatted():
     return jsonify({"voices": get_voices_formatted()})
 
 @app.route('/v1/voices', methods=['GET', 'POST'])
 @app.route('/voices', methods=['GET', 'POST'])
+
 @require_api_key
 def list_voices():
     specific_language = None
@@ -166,6 +188,7 @@ def list_voices():
 
 @app.route('/v1/voices/all', methods=['GET', 'POST'])
 @app.route('/voices/all', methods=['GET', 'POST'])
+
 @require_api_key
 def list_all_voices():
     return jsonify({"voices": get_voices('all')})

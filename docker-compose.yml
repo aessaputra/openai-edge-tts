@@ -6,8 +6,6 @@ services:
       context: .
       args:
         INSTALL_FFMPEG: ${INSTALL_FFMPEG_ARG:-false} # Controlled by env var or defaults to false
-    ports:
-      - '${PORT:-5050}:5050'
     env_file:
       - .env
     environment: # optionally define in -e argument when running docker command
@@ -21,3 +19,9 @@ services:
       REMOVE_FILTER: ${REMOVE_FILTER:-False}
       EXPAND_API: ${EXPAND_API:-True}
       DETAILED_ERROR_LOGGING: ${DETAILED_ERROR_LOGGING:-True}
+    networks:
+      - caddy_network
+
+networks:
+  caddy_network:
+    external: true
