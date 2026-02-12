@@ -10,7 +10,7 @@ import traceback
 import json
 import base64
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from config import DEFAULT_CONFIGS
 from handle_text import prepare_tts_input_with_context
@@ -51,7 +51,7 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 @app.after_request
 def log_request(response):
-    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     logger.info(
         '%s - - [%s] "%s %s HTTP/1.1" %s %s',
         request.remote_addr,  # Real IP via ProxyFix
