@@ -9,6 +9,8 @@ import os
 import traceback
 import json
 import base64
+import logging
+from datetime import datetime
 
 from config import DEFAULT_CONFIGS
 from handle_text import prepare_tts_input_with_context
@@ -18,13 +20,20 @@ from utils import getenv_bool, require_api_key, AUDIO_FORMAT_MIME_TYPES, DETAILE
 app = Flask(__name__)
 
 # Enable CORS for all routes (handles OPTIONS preflight requests)
-CORS(app)
+# Per flask-cors docs (https://flask-cors.readthedocs.io/en/latest/configuration.html):
+#   Default CORS_ALLOW_HEADERS: "*" (all headers including Authorization)
+#   Default CORS_ORIGINS: "*" (all origins)
+#   Default CORS_METHODS: all standard methods
+# send_wildcard=True: respond with literal "Access-Control-Allow-Origin: *"
+#   instead of mirroring the Origin header value
+CORS(app, send_wildcard=True)
 
 # Trust reverse proxy headers (Caddy) for real client IP forwarding
-# x_for=1: trust 1 proxy setting X-Forwarded-For
-# x_proto=1: trust 1 proxy setting X-Forwarded-Proto
-# x_host=1: trust 1 proxy setting X-Forwarded-Host
-# x_prefix=1: trust 1 proxy setting X-Forwarded-Prefix
+# Per Flask docs (https://flask.palletsprojects.com/en/stable/deploying/proxy_fix/):
+#   x_for=1: trust 1 proxy setting X-Forwarded-For
+#   x_proto=1: trust 1 proxy setting X-Forwarded-Proto
+#   x_host=1: trust 1 proxy setting X-Forwarded-Host
+#   x_prefix=1: trust 1 proxy setting X-Forwarded-Prefix
 app.wsgi_app = ProxyFix(
     app.wsgi_app,
     x_for=1,
@@ -34,6 +43,25 @@ app.wsgi_app = ProxyFix(
 )
 
 load_dotenv()
+
+# Custom access logging using real client IP (from ProxyFix/X-Forwarded-For)
+# Replaces gevent's default logging which shows Docker internal IP
+logger = logging.getLogger('access')
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+@app.after_request
+def log_request(response):
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    logger.info(
+        '%s - - [%s] "%s %s HTTP/1.1" %s %s',
+        request.remote_addr,  # Real IP via ProxyFix
+        timestamp,
+        request.method,
+        request.path,
+        response.status_code,
+        response.content_length or '-'
+    )
+    return response
 
 API_KEY = os.getenv('API_KEY', DEFAULT_CONFIGS["API_KEY"])
 PORT = int(os.getenv('PORT', str(DEFAULT_CONFIGS["PORT"])))
@@ -87,7 +115,7 @@ def generate_sse_audio_stream(text, voice, speed):
 
 # OpenAI endpoint format
 @app.route('/v1/audio/speech', methods=['POST'])
-@app.route('/audio/speech', methods=['POST'])  # Alias without /v1 prefix
+@app.route('/audio/speech', methods=['POST'])
 @require_api_key
 def text_to_speech():
     try:
@@ -162,20 +190,17 @@ def text_to_speech():
 @app.route('/models', methods=['GET', 'POST'])
 @app.route('/v1/audio/models', methods=['GET', 'POST'])
 @app.route('/audio/models', methods=['GET', 'POST'])
-
 def list_models():
     return jsonify({"models": get_models_formatted()})
 
 # OpenAI endpoint format
 @app.route('/v1/audio/voices', methods=['GET', 'POST'])
 @app.route('/audio/voices', methods=['GET', 'POST'])
-
 def list_voices_formatted():
     return jsonify({"voices": get_voices_formatted()})
 
 @app.route('/v1/voices', methods=['GET', 'POST'])
 @app.route('/voices', methods=['GET', 'POST'])
-
 @require_api_key
 def list_voices():
     specific_language = None
@@ -188,7 +213,6 @@ def list_voices():
 
 @app.route('/v1/voices/all', methods=['GET', 'POST'])
 @app.route('/voices/all', methods=['GET', 'POST'])
-
 @require_api_key
 def list_all_voices():
     return jsonify({"voices": get_voices('all')})
@@ -281,5 +305,7 @@ print(f" * TTS Endpoint: http://localhost:{PORT}/v1/audio/speech")
 print(f" ")
 
 if __name__ == '__main__':
-    http_server = WSGIServer(('0.0.0.0', PORT), app)
+    # Per gevent docs: log=None disables gevent's default access logging
+    # Real client IP logging is handled by Flask's after_request handler above
+    http_server = WSGIServer(('0.0.0.0', PORT), app, log=None)
     http_server.serve_forever()
