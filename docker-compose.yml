@@ -1,16 +1,62 @@
+configs:
+  ts-serve:
+    content: |
+      {"TCP":{"443":{"HTTPS":true}},
+      "Web":{"$${TS_CERT_DOMAIN}:443":
+          {"Handlers":{"/":
+          {"Proxy":"http://127.0.0.1:5050"}}}},
+      "AllowFunnel":{"$${TS_CERT_DOMAIN}:443":false}}
+
 services:
+  # Tailscale Sidecar Configuration
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale-${SERVICE:-openai-edge-tts}
+    hostname: ${SERVICE:-openai-edge-tts}
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/serve.json
+      - TS_USERSPACE=false
+      - TS_ENABLE_HEALTH_CHECK=true
+      - TS_LOCAL_ADDR_PORT=127.0.0.1:41234
+      #- TS_ACCEPT_DNS=true # Uncomment when using MagicDNS
+      - TS_AUTH_ONCE=true
+    configs:
+      - source: ts-serve
+        target: /config/serve.json
+    volumes:
+      - ./ts/config:/config
+      - ./ts/state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - net_admin
+    #ports:
+    #  - 0.0.0.0:${PORT:-5050}:${PORT:-5050} # Uncomment to expose port to local network
+    # If any DNS issues arise, use your preferred DNS provider
+    #dns:
+    #  - ${DNS_SERVER}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:41234/healthz"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: always
+
+  # OpenAI Edge TTS Application
   app:
-    container_name: openai-edge-tts
+    container_name: app-${SERVICE:-openai-edge-tts}
     restart: unless-stopped
     build:
       context: .
       args:
-        INSTALL_FFMPEG: ${INSTALL_FFMPEG_ARG:-false} # Controlled by env var or defaults to false
-    ports:
-      - '${PORT:-5050}:5050'
+        INSTALL_FFMPEG: ${INSTALL_FFMPEG_ARG:-false}
+    network_mode: service:tailscale
     env_file:
       - .env
-    environment: # optionally define in -e argument when running docker command
+    environment:
       API_KEY: ${API_KEY:-your_api_key_here}
       PORT: ${PORT:-5050}
       DEFAULT_VOICE: ${DEFAULT_VOICE:-en-US-AvaNeural}
@@ -21,3 +67,12 @@ services:
       REMOVE_FILTER: ${REMOVE_FILTER:-False}
       EXPAND_API: ${EXPAND_API:-True}
       DETAILED_ERROR_LOGGING: ${DETAILED_ERROR_LOGGING:-True}
+    depends_on:
+      tailscale:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${PORT:-5050}/ || exit 1"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
