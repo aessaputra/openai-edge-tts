@@ -142,6 +142,11 @@ def text_to_speech():
         # Return a 500 error for unhandled exceptions, which is more standard than 400
         return jsonify({"error": "An internal server error occurred", "details": str(e)}), 500
 
+# Health check endpoint for Docker/Coolify
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
 # OpenAI endpoint format
 @app.route('/v1/models', methods=['GET', 'POST'])
 @app.route('/models', methods=['GET', 'POST'])
