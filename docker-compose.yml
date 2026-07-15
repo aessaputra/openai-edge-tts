@@ -39,10 +39,10 @@ services:
     #  - ${DNS_SERVER}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:41234/healthz"]
-      interval: 1m
-      timeout: 10s
+      interval: 5s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 5s
     restart: always
 
   # OpenAI Edge TTS Application
@@ -72,7 +72,7 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:${PORT:-5050}/ || exit 1"]
-      interval: 1m
-      timeout: 10s
+      interval: 5s
+      timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 10s
