@@ -8,6 +8,9 @@ import os
 import traceback
 import json
 import base64
+import logging
+
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import DEFAULT_CONFIGS
 from handle_text import prepare_tts_input_with_context
@@ -16,6 +19,20 @@ from utils import require_api_key, AUDIO_FORMAT_MIME_TYPES
 
 app = Flask(__name__)
 load_dotenv()
+
+# Enable only when the app is reachable exclusively through one trusted proxy.
+if os.getenv('TRUST_PROXY', 'false').lower() in ('true', '1', 'yes'):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=0)
+app.logger.setLevel(logging.INFO)
+
+
+@app.after_request
+def log_request(response):
+    if request.path != '/health' or response.status_code >= 400:
+        app.logger.info('%s %s %s %s', request.remote_addr, request.method,
+                        request.path, response.status_code)
+    return response
+
 
 API_KEY = os.getenv('API_KEY', DEFAULT_CONFIGS["API_KEY"])
 PORT = int(os.getenv('PORT', str(DEFAULT_CONFIGS["PORT"])))
@@ -193,5 +210,5 @@ print(f" * TTS Endpoint: http://localhost:{PORT}/v1/audio/speech")
 print(" ")
 
 if __name__ == '__main__':
-    http_server = WSGIServer(('0.0.0.0', PORT), app)
+    http_server = WSGIServer(('0.0.0.0', PORT), app, log=None)
     http_server.serve_forever()

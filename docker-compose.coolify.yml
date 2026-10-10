@@ -1,0 +1,20 @@
+services:
+  app:
+    image: ghcr.io/aessaputra/openai-edge-tts:3.0.0
+    restart: unless-stopped
+    environment:
+      - SERVICE_URL_APP_5050
+      - API_KEY=${SERVICE_PASSWORD_64_TTS}
+      - PORT=5050
+      - DEFAULT_VOICE=${DEFAULT_VOICE:-id-ID-ArdiNeural}
+      - DEFAULT_RESPONSE_FORMAT=${DEFAULT_RESPONSE_FORMAT:-mp3}
+      - DEFAULT_SPEED=${DEFAULT_SPEED:-1.0}
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-id-ID}
+      - REQUIRE_API_KEY=True
+      - TRUST_PROXY=true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
