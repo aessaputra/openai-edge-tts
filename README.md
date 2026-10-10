@@ -60,16 +60,13 @@ cd openai-edge-tts
 API_KEY=your_api_key_here
 PORT=5050
 
-DEFAULT_VOICE=en-US-AvaNeural
+DEFAULT_VOICE=id-ID-ArdiNeural
 DEFAULT_RESPONSE_FORMAT=mp3
 DEFAULT_SPEED=1.0
 
-DEFAULT_LANGUAGE=en-US
+DEFAULT_LANGUAGE=id-ID
 
 REQUIRE_API_KEY=True
-REMOVE_FILTER=False
-EXPAND_API=True
-DETAILED_ERROR_LOGGING=True
 ```
 
 Or, copy the default `.env.example` with the following:
@@ -185,16 +182,13 @@ Create a `.env` file in the root directory and set the following variables:
 API_KEY=your_api_key_here
 PORT=5050
 
-DEFAULT_VOICE=en-US-AvaNeural
+DEFAULT_VOICE=id-ID-ArdiNeural
 DEFAULT_RESPONSE_FORMAT=mp3
 DEFAULT_SPEED=1.0
 
-DEFAULT_LANGUAGE=en-US
+DEFAULT_LANGUAGE=id-ID
 
 REQUIRE_API_KEY=True
-REMOVE_FILTER=False
-EXPAND_API=True
-DETAILED_ERROR_LOGGING=True
 ```
 
 ### 5. Run the Server
@@ -231,7 +225,7 @@ Generates audio from the input text. Available parameters:
 **Optional Parameters:**
 
 - **model** (string): Set to "tts-1" or "tts-1-hd" (default: `"tts-1"`).
-- **voice** (string): One of the OpenAI-compatible voices (alloy, echo, fable, onyx, nova, shimmer) or any valid `edge-tts` voice (default: `"en-US-AvaNeural"`).
+- **voice** (string): One of the OpenAI-compatible voices (alloy, echo, fable, onyx, nova, shimmer) or any valid `edge-tts` voice (default: `"id-ID-ArdiNeural"`).
 - **response_format** (string): Audio format. Options: `mp3`, `opus`, `aac`, `flac`, `wav`, `pcm` (default: `mp3`).
 - **speed** (number): Playback speed (0.25 to 4.0). Default is `1.0`.
 - **stream_format** (string): Response format. Options: `"audio"` (raw audio data, default) or `"sse"` (Server-Sent Events streaming with JSON events).

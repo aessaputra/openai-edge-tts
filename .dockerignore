@@ -1,0 +1,16 @@
+.git
+.gitignore
+.github
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+.ruff_cache/
+README.md
+LICENSE
+docker-compose.yml
+Dockerfile
+.dockerignore
+pyproject.toml

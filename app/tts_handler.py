@@ -1,13 +1,15 @@
 # tts_handler.py
 
-import edge_tts
 import asyncio
+import concurrent.futures
+import inspect
+
+import edge_tts
 import tempfile
 import subprocess
 import os
 from pathlib import Path
 
-from utils import DETAILED_ERROR_LOGGING
 from config import DEFAULT_CONFIGS
 
 # Language default (environment variable)
@@ -42,31 +44,31 @@ def is_ffmpeg_installed():
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
 
-async def _generate_audio_stream(text, voice, speed):
-    """Generate streaming TTS audio using edge-tts."""
+def generate_speech_stream(text: str, voice: str, speed=1.0):
+    """Generate streaming speech audio."""
     # Determine if the voice is an OpenAI-compatible voice or a direct edge-tts voice
-    edge_tts_voice = voice_mapping.get(voice, voice)  # Use mapping if in OpenAI names, otherwise use as-is
-    
+    edge_tts_voice = voice_mapping.get(voice, voice)
+
     # Convert speed to SSML rate format
     try:
-        speed_rate = speed_to_rate(speed)  # Convert speed value to "+X%" or "-X%"
+        speed_rate = speed_to_rate(speed)
     except Exception as e:
         print(f"Error converting speed: {e}. Defaulting to +0%.")
         speed_rate = "+0%"
-    
-    # Create the communicator for streaming
+
     communicator = edge_tts.Communicate(text=text, voice=edge_tts_voice, rate=speed_rate)
-    
-    # Stream the audio data
-    async for chunk in communicator.stream():
-        if chunk["type"] == "audio":
+
+    for chunk in communicator.stream_sync():
+        if chunk.get("type") == "audio" and chunk.get("data") is not None:
             yield chunk["data"]
 
-def generate_speech_stream(text, voice, speed=1.0):
-    """Generate streaming speech audio (synchronous wrapper)."""
-    return asyncio.run(_generate_audio_stream(text, voice, speed))
+def _run_coro_sync(coro):
+    """Run a coroutine to completion from sync code without reusing a loop."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(asyncio.run, coro).result()
 
-async def _generate_audio(text, voice, response_format, speed):
+
+def _generate_audio(text, voice, response_format, speed):
     """Generate TTS audio and optionally convert to a different format."""
     # Determine if the voice is an OpenAI-compatible voice or a direct edge-tts voice
     edge_tts_voice = voice_mapping.get(voice, voice)  # Use mapping if in OpenAI names, otherwise use as-is
@@ -84,7 +86,7 @@ async def _generate_audio(text, voice, response_format, speed):
 
     # Generate the MP3 file
     communicator = edge_tts.Communicate(text=text, voice=edge_tts_voice, rate=speed_rate)
-    await communicator.save(temp_mp3_path)
+    communicator.save_sync(temp_mp3_path)
     temp_mp3_file_obj.close() # Explicitly close our file object for the initial mp3
 
     # If the requested format is mp3, return the generated file directly
@@ -137,13 +139,9 @@ async def _generate_audio(text, voice, response_format, speed):
         Path(converted_path).unlink(missing_ok=True)
         # Clean up the original mp3 file as well, since conversion failed
         Path(temp_mp3_path).unlink(missing_ok=True)
-        
-        if DETAILED_ERROR_LOGGING:
-            error_message = f"FFmpeg error during audio conversion. Command: '{' '.join(e.cmd)}'. Stderr: {e.stderr.decode('utf-8', 'ignore')}"
-            print(error_message) # Log for server-side diagnosis
-        else:
-            error_message = f"FFmpeg error during audio conversion: {e}"
-            print(error_message) # Log a simpler message
+
+        error_message = f"FFmpeg error during audio conversion. Command: '{' '.join(e.cmd)}'. Stderr: {e.stderr.decode('utf-8', 'ignore')}"
+        print(error_message) # Log for server-side diagnosis
         raise RuntimeError(f"FFmpeg error during audio conversion: {e}") # The raised error will still have details via e
 
     # Clean up the original temporary file (original mp3) as it's now converted
@@ -152,20 +150,34 @@ async def _generate_audio(text, voice, response_format, speed):
     return converted_path
 
 def generate_speech(text, voice, response_format, speed=1.0):
-    return asyncio.run(_generate_audio(text, voice, response_format, speed))
-
-def get_models():
-    return model_data
+    return _generate_audio(text, voice, response_format, speed)
 
 def get_models_formatted():
     return [{ "id": x["id"] } for x in model_data]
 
+def get_models_openai():
+    """OpenAI-compatible list shape: {object: list, data: [Model]}."""
+    return {
+        "object": "list",
+        "data": [
+            {
+                "id": x["id"],
+                "object": "model",
+                "created": 0,
+                "owned_by": "openai-edge-tts",
+            }
+            for x in model_data
+        ],
+    }
+
 def get_voices_formatted():
     return [{ "id": k, "name": v } for k, v in voice_mapping.items()]
 
-async def _get_voices(language=None):
+def _get_voices(language=None):
     # List all voices, filter by language if specified
-    all_voices = await edge_tts.list_voices()
+    all_voices = edge_tts.list_voices()
+    if inspect.isawaitable(all_voices):
+        all_voices = _run_coro_sync(all_voices)
     language = language or DEFAULT_LANGUAGE  # Use default if no language specified
     filtered_voices = [
         {"name": v['ShortName'], "gender": v['Gender'], "language": v['Locale']}
@@ -174,7 +186,7 @@ async def _get_voices(language=None):
     return filtered_voices
 
 def get_voices(language=None):
-    return asyncio.run(_get_voices(language))
+    return _get_voices(language)
 
 def speed_to_rate(speed: float) -> str:
     """
@@ -186,8 +198,8 @@ def speed_to_rate(speed: float) -> str:
     Returns:
         str: The formatted "rate" string (e.g., "+50%" or "-50%").
     """
-    if speed < 0 or speed > 2:
-        raise ValueError("Speed must be between 0 and 2 (inclusive).")
+    if speed < 0.25 or speed > 4.0:
+        raise ValueError("Speed must be between 0.25 and 4.0 (inclusive).")
 
     # Convert speed to percentage change
     percentage_change = (speed - 1) * 100
